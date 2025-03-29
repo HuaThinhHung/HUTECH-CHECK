@@ -1,0 +1,73 @@
+<script setup lang="ts">
+import {
+  FmlButton,
+  FmlCard,
+  FmlCardContent,
+  FmlCardHeader,
+  FmlCardTitle,
+  FmlInput,
+  FmlSpinner,
+} from "@familyjs/kdu";
+import { HUTECH_AFFIX_EMAIL, DASHBOARD_AUTH_API_URL, emailPattern, showToast } from "@/utils";
+import { ref } from "kdu";
+import axios from "axios";
+
+const username = ref("");
+const password = ref("");
+const loading = ref(false);
+
+const redirectUser = () => {
+  window.location.replace("/");
+}
+
+const handleSignIn = async () => {
+  loading.value = true;
+
+  let email = username.value;
+  if (!emailPattern.test(username.value)) {
+    email += HUTECH_AFFIX_EMAIL;
+  }
+
+  try {
+    const response = await axios.post(`${DASHBOARD_AUTH_API_URL}/login`, {
+      email,
+      password: password.value,
+    })
+
+    if (response.data.token) {
+      localStorage.setItem('authToken', response.data.token)
+
+      showToast("Đăng nhập thành công");
+      redirectUser();
+    }
+  } catch (error: any) {
+    console.error('Lỗi đăng nhập:', error.response?.data || error.message)
+  } finally {
+    loading.value = false;
+  }
+}
+</script>
+
+<template>
+  <fml-card>
+    <fml-card-header>
+      <fml-card-title>Đăng nhập</fml-card-title>
+    </fml-card-header>
+
+    <fml-card-content>
+      <form @submit.prevent="handleSignIn">
+        <fml-input label="Tài khoản" label-placement="floating" fill="outline" k-model="username" required />
+        <br />
+        <fml-input label="Mật khẩu" label-placement="floating" fill="outline" type="password" k-model="password"
+          required />
+        <br />
+        <fml-button k-if="!loading" type="submit" shape="round">
+          Đăng nhập
+        </fml-button>
+        <fml-spinner k-if="loading" color="primary" />
+      </form>
+    </fml-card-content>
+  </fml-card>
+</template>
+
+<style scoped></style>

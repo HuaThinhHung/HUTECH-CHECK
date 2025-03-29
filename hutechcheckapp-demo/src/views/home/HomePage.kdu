@@ -1,0 +1,78 @@
+<script setup lang="ts">
+import {
+  FmlItem,
+  FmlLabel,
+  FmlList,
+  FmlRefresher,
+  FmlRefresherContent,
+  FmlSpinner
+} from "@familyjs/kdu";
+import { eyeOutline } from "famicons/icons";
+import { ref, watchEffect } from "kdu";
+import axios from "axios";
+import { getFullDateOf, DASHBOARD_EVENTS_API_URL } from "@/utils";
+
+let isLoading = ref(false);
+let events = ref<any>([]);
+
+const getEvents = async () => {
+  try {
+    events.value = [];
+
+    const res = await axios.get(`${DASHBOARD_EVENTS_API_URL}/get-all-events-checkin`);
+
+    if (res.status == 200) {
+      const eventSnap = res.data;
+      for (const doc of eventSnap) {
+        events.value.push(doc);
+      }
+    }
+
+    isLoading.value = false;
+  } catch (error) {
+    console.error("Error fetching events:", error);
+  } finally {
+    isLoading.value = false; // Set loading state to false regardless of the outcome
+  }
+}
+
+watchEffect(() => {
+  isLoading.value = true;
+  getEvents();
+});
+
+const handleRefresh = async (event: CustomEvent) => {
+  isLoading.value = true;
+  await getEvents();
+  event.target.complete();
+}
+</script>
+
+<template>
+  <div>
+    <fml-refresher slot="fixed" @fmlRefresh="handleRefresh($event)">
+      <fml-refresher-content></fml-refresher-content>
+    </fml-refresher>
+  </div>
+
+  <p k-if="events.length === 0">
+    Chưa có sự kiện nào để check-in.
+  </p>
+
+  <fml-list k-else lines="full">
+    <fml-item k-for="(event, index) in events" :key="index" :href="`/checkin/${event.id}`" detail="true"
+      :detail-icon="eyeOutline">
+      <fml-label>
+        <h3>{{ event.title }}</h3>
+        <p>
+          {{ event.room && `Phòng ${event.room} - ` }}
+          {{ getFullDateOf(event.date) }}
+        </p>
+      </fml-label>
+    </fml-item>
+  </fml-list>
+
+  <fml-spinner k-if="isLoading" color="primary" />
+</template>
+
+<style scoped></style>

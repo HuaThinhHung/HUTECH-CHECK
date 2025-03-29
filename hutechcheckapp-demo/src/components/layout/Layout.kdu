@@ -1,0 +1,118 @@
+<script setup lang="ts">
+import {
+  alertController,
+  FmlAvatar,
+  FmlButton,
+  FmlButtons,
+  FmlChip,
+  FmlContent,
+  FmlHeader,
+  FmlIcon,
+  FmlImg,
+  FmlLabel,
+  FmlPage,
+  FmlPopover,
+  FmlSpinner,
+  FmlTitle,
+  FmlToolbar,
+} from "@familyjs/kdu";
+import { logOutOutline, contrastOutline } from "famicons/icons";
+import { computed, ref } from "kdu";
+import { useStore } from "kdux";
+import avatar from "@/assets/avatar.svg";
+import { showToast, saveToLocalStorage, removeFromLocalStorage } from "@/utils";
+
+let isWaitingLogout = ref(false);
+
+const store = useStore();
+
+const isLoggedIn = computed(() => store.getters.selectIsLoggedIn);
+const fullName = computed(() => store.getters.selectFullName);
+
+const switchTheme = () => {
+  const body = document.body;
+  if (body.getAttribute("color-theme") === "light" || body.getAttribute("color-theme") === null) {
+    body.setAttribute("color-theme", "dark");
+    saveToLocalStorage("use-theme", "dark");
+  } else {
+    body.setAttribute("color-theme", "light");
+    saveToLocalStorage("use-theme", "light");
+  }
+}
+
+const redirectToLogin = () => {
+  window.location.replace("/login");
+}
+
+const handleLogout = async () => {
+  isWaitingLogout.value = true;
+
+  const alert = await alertController.create({
+    header: "Đăng xuất",
+    message: "Bạn có chắc chắn muốn đăng xuất?",
+    buttons: [
+      {
+        text: 'Hủy',
+        handler: () => {
+          isWaitingLogout.value = false;
+        },
+      },
+      {
+        text: 'Đăng xuất',
+        handler: () => {
+          removeFromLocalStorage('authToken')
+          //window.location.reload()
+          showToast("Đăng xuất thành công");
+          isWaitingLogout.value = false;
+          redirectToLogin();
+        },
+      },
+    ]
+  });
+
+  await alert.present();
+}
+</script>
+
+<template>
+  <fml-page>
+    <fml-header>
+      <fml-toolbar>
+        <fml-title>
+          <fml-img src="/favicon.jpg" class="logo" />
+        </fml-title>
+        <fml-buttons slot="primary">
+          <fml-button @click="switchTheme()">
+            <fml-icon slot="icon-only" :icon="contrastOutline" />
+          </fml-button>
+          <fml-chip id="open-menu" k-if="isLoggedIn && !isWaitingLogout">
+            <fml-avatar>
+              <img :src="avatar" />
+            </fml-avatar>
+            <fml-label>{{ fullName }}</fml-label>
+          </fml-chip>
+          <fml-popover trigger="open-menu" trigger-action="click" k-if="!isWaitingLogout">
+            <fml-button @click="handleLogout" fill="clear" color="danger">
+              <fml-icon slot="start" :icon="logOutOutline" color="danger"></fml-icon>
+              Đăng xuất
+            </fml-button>
+          </fml-popover>
+          <fml-spinner color="danger" k-if="isWaitingLogout"></fml-spinner>
+        </fml-buttons>
+      </fml-toolbar>
+    </fml-header>
+
+    <fml-content>
+      <slot></slot>
+    </fml-content>
+  </fml-page>
+</template>
+
+<style scoped>
+.logo {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  overflow: hidden;
+}
+</style>

@@ -1,0 +1,109 @@
+<script setup lang="ts">
+import {
+  FmlButton,
+  FmlButtons,
+  FmlChip,
+  FmlContent,
+  FmlHeader,
+  FmlIcon,
+  FmlImg,
+  FmlLabel,
+  FmlModal,
+  FmlTitle,
+} from "@familyjs/kdu";
+import { calendarOutline, closeOutline, locationOutline, peopleOutline } from "famicons/icons";
+import { computed } from "kdu";
+import { useStore } from "kdux";
+import { formatDateTime } from "@/utils";
+import event_img from "@/assets/icon_event.jpg";
+
+const store = useStore();
+const studentId = computed(() => store.getters.selectStudentId);
+
+defineProps(['isOpen', 'eventDetail']);
+defineEmits(['close', 'onRegistration'])
+</script>
+
+<template>
+  <fml-modal :is-open="isOpen" :backdrop-dismiss="false">
+    <fml-header>
+      <fml-toolbar>
+        <fml-title>Chi tiết sự kiện</fml-title>
+        <fml-buttons slot="end">
+          <fml-button @click="$emit('close')" color="danger">
+            <fml-icon slot="start" :icon="closeOutline" />
+            Đóng
+          </fml-button>
+        </fml-buttons>
+      </fml-toolbar>
+    </fml-header>
+    <fml-content k-if="eventDetail" class="fml-padding">
+      <fml-img k-if="eventDetail.posterType != 'no-image'" :src="eventDetail.poster" :class="eventDetail.posterType"
+        alt="Event Poster" />
+      <img k-else :src="event_img" class="no-image" alt="Event Poster" />
+      <h1>{{ eventDetail.title }}</h1>
+      <fml-chip k-if="eventDetail.room">
+        <fml-icon :icon="locationOutline"></fml-icon>
+        <fml-label>{{ `${eventDetail.room}` }}</fml-label>
+      </fml-chip>
+      <fml-chip color="danger">
+        <fml-icon :icon="calendarOutline"></fml-icon>
+        <fml-label>{{ formatDateTime(eventDetail.date) }}</fml-label>
+      </fml-chip>
+      <fml-chip color="primary">
+        <fml-icon :icon="peopleOutline"></fml-icon>
+        <fml-label>{{ eventDetail.hostname }}</fml-label>
+      </fml-chip>
+      <div class="hr"></div>
+      <fml-chip color="primary" k-if="eventDetail.summary">
+        <fml-label>{{ eventDetail.summary }}</fml-label>
+      </fml-chip>
+      <div k-if="eventDetail.description" k-html="eventDetail.description"></div>
+      <div class="hr"></div>
+      <fml-button expand="block" color="primary" @click="$emit('onRegistration', eventDetail.id)">
+        {{ eventDetail.preRegistration != null
+          && eventDetail.preRegistration.includes(studentId)
+          ? 'Đã đăng ký tham dự'
+          : 'Đăng ký tham dự' }}
+      </fml-button>
+    </fml-content>
+  </fml-modal>
+</template>
+
+<style scoped>
+.hr {
+  border-bottom: 1px solid #ccc;
+  margin: 10px 0;
+  width: 100%;
+}
+
+img.no-image {
+  width: auto;
+  max-width: 100%;
+  height: 200px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+fml-modal img.no-image,
+fml-modal fml-img.image-landscape {
+  width: 100%;
+  height: auto;
+}
+
+fml-img {
+  width: auto;
+  max-width: 100%;
+  height: 0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+fml-img.image-landscape {
+  height: 200px;
+}
+
+fml-img.image-portrait {
+  height: 255px;
+}
+</style>

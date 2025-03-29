@@ -1,0 +1,141 @@
+<script setup lang="ts">
+import { CertCard } from "@/components";
+import {
+  FmlButton,
+  FmlIcon,
+  FmlRefresher,
+  FmlRefresherContent,
+  FmlSpinner,
+  FmlText,
+} from "@familyjs/kdu";
+import { warning } from "famicons/icons";
+import { computed, ref, watchEffect } from "kdu";
+import { useStore } from "kdux";
+import axios from "axios";
+import { DASHBOARD_CERTS_API_URL, DASHBOARD_STUDENTS_API_URL, DASHBOARD_EVENTS_API_URL } from "@/utils";
+
+const loading = ref(false);
+const certs = ref<any>(null);
+
+const store = useStore();
+
+const fullName = computed(() => store.getters.selectFullName);
+const studentId = computed(() => store.getters.selectStudentId);
+const studentEmail = computed(() => store.getters.selectEmail);
+
+const getEvent = async () => {
+  const docSnap = (await axios.get(`${DASHBOARD_CERTS_API_URL}/find-by-student-id?stId=${studentId.value}`)).data;
+
+  let allDoc: Promise<any>[] = [];
+
+  docSnap.map(async (doc: any) => {
+    if (doc.checkoutAt === "") {
+      const getData = getPromiseData(
+        doc.eventId,
+        doc.studentId,
+      );
+      allDoc.push(
+        getData.then(({ stData, evData }) => {
+          return evData.display && {
+            id: doc.id,
+            certId: doc.certId,
+            studentId: doc.studentId,
+            fullName: stData.fullName,
+            studyClass: stData.studyClass,
+            title: evData.title,
+            host: evData.host,
+            templateId: evData.template,
+            date: evData.date,
+            room: evData.room,
+            checkinAt: doc.checkinAt,
+            display: evData.display,
+          }
+        }),
+      );
+    }
+  });
+
+  certs.value = (await Promise.all(allDoc)).sort((a: any, b: any) => {
+    const aDate = new Date(a.date).getTime();
+    const bDate = new Date(b.date).getTime();
+    return bDate - aDate;
+  });;
+
+  loading.value = false;
+};
+
+const getPromiseData = async (
+  eventId: string,
+  studentId: string,
+) => {
+  const stData = (await axios.get(`${DASHBOARD_STUDENTS_API_URL}/get-by-id?studentId=${studentId}`)).data;
+  const evData = (await axios.get(`${DASHBOARD_EVENTS_API_URL}/get?eventId=${eventId}`)).data;
+
+  return { stData, evData };
+};
+
+watchEffect(() => {
+  loading.value = true;
+  getEvent();
+});
+
+const handleRefresh = async (event: CustomEvent) => {
+  certs.value = null;
+  await getEvent();
+  event.target.complete();
+}
+</script>
+
+<template>
+  <div>
+    <fml-refresher slot="fixed" @fmlRefresh="handleRefresh($event)" style="z-index: 2;">
+      <fml-refresher-content></fml-refresher-content>
+    </fml-refresher>
+
+    <fml-text color="warning" k-if="!studentEmail">
+      <fml-icon :icon="warning" /> Vui lòng thêm Email
+      để đảm bảo tài khoản được bảo vệ an toàn hơn.
+      <fml-button href="/student">Cập nhật</fml-button>
+    </fml-text>
+
+    <fml-text>
+      <h3>Xin chào, {{ fullName }}</h3>
+    </fml-text>
+    <p>
+      Dưới đây là các sự kiện bạn đã tham gia và được check-in.
+      <br />
+      Bấm vào sự kiện bên dưới để nhận giấy chứng nhận.
+    </p>
+
+    <fml-spinner k-if="loading" color="primary" />
+    <p k-if="certs == null">Bạn chưa tham dự sự kiện nào.</p>
+    <div k-else class="grid">
+      <CertCard k-for="(cert, index) in certs" :cert="cert" :key="index" />
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.grid {
+  columns: 4;
+  column-gap: 1rem;
+}
+
+.box {
+  margin-top: 0;
+  margin-bottom: 1rem;
+}
+
+@media screen and (max-width: 768px) {
+  .grid {
+    columns: 2;
+  }
+
+}
+
+@media screen and (max-width: 480px) {
+  .grid {
+    columns: 1;
+  }
+}
+</style>

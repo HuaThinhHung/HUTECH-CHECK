@@ -1,0 +1,45 @@
+{
+  "name": "hutechcheckin",
+  "description": "A Family project",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "lahm",
+    "build": "kdu-tsc && lahm build",
+    "preview": "lahm preview",
+    "lint": "eslint",
+    "deploy": "fml build --prod && firebase deploy"
+  },
+  "dependencies": {
+    "@familyjs/kdu": "^7.8.6",
+    "@familyjs/kdu-router": "^7.8.6",
+    "@familyjs/pwa-elements": "^3.2.2",
+    "@jigra/app": "5.0.8",
+    "@jigra/core": "5.7.8",
+    "@jigra/haptics": "5.0.8",
+    "@jigra/keyboard": "5.0.8",
+    "@jigra/status-bar": "5.0.8",
+    "@jigra/toast": "5.0.8",
+    "@kduse/core": "^9.13.2",
+    "axios": "^1.6.8",
+    "dotenv": "^16.4.5",
+    "famicons": "^7.2.3",
+    "kdu": "^3.3.13",
+    "kdu-router": "^4.2.0",
+    "kdux": "^4.0.0"
+  },
+  "devDependencies": {
+    "@jigra/cli": "5.7.8",
+    "@kdujs/eslint-config-typescript": "^9.1.0",
+    "@lahmjs/plugin-kdu": "^4.0.0",
+    "@lahmjs/plugin-legacy": "^5.2.0",
+    "eslint": "^8.35.0",
+    "eslint-plugin-kdu": "^8.0.3",
+    "jsdom": "^21.1.0",
+    "kdu-tsc": "^1.2.0",
+    "lahm": "^5.0.5",
+    "lahm-plugin-pwa": "^0.16.7",
+    "typescript": "^5.5.4"
+  }
+}

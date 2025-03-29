@@ -1,0 +1,154 @@
+<script setup lang="ts">
+import { showToast, onCheckinOrCheckout, DASHBOARD_EVENTS_API_URL, DASHBOARD_CERTS_API_URL } from "@/utils";
+import {
+  FmlButton,
+  FmlButtons,
+  FmlIcon,
+  FmlInput,
+  FmlItem,
+  FmlLabel,
+  FmlList,
+  FmlRefresher,
+  FmlRefresherContent,
+  FmlSpinner,
+} from "@familyjs/kdu";
+import { personAddOutline, warning } from "famicons/icons";
+import { Loader, ScannerUnsupported, Student } from "@/components";
+import { computed, ref, watchEffect } from "kdu";
+import { useRoute } from "kdu-router";
+import { useStore } from "kdux";
+import axios from "axios";
+
+const route = useRoute();
+
+const id = route.params.id;
+
+let loading = ref(false);
+let eventName = ref("");
+let hostId = ref("");
+let studentId = ref("");
+let waiting = ref(false);
+let studentsCheckedIn = ref([]);
+
+const store = useStore();
+
+const userId = computed(() => store.getters.selectUserId);
+
+const redirectToHome = () => {
+  window.location.replace("/");
+}
+
+const checkIsExistEvent = async () => {
+  try {
+    const res = await axios.get(`${DASHBOARD_EVENTS_API_URL}/get?eventId=${id}`);
+
+    if (res.status == 200) {
+      eventName.value = res.data.title;
+      hostId.value = res.data.host;
+      loading.value = false;
+      await getStudentsFromEvent();
+    } else {
+      redirectToHome();
+    }
+  } catch (error: any) {
+    if (error.response.status == 404) {
+        showToast("Không tìm thấy thông tin sự kiện này!");
+      } else {
+        console.error('Lỗi lấy dữ liệu:', error)
+      }
+    redirectToHome();
+  }
+}
+
+const getStudentsFromEvent = async () => {
+  waiting.value = true;
+
+  const docsSnap = (await axios.get(`${DASHBOARD_CERTS_API_URL}/find-by-event-id?evId=${id}`)).data
+
+  let checkinList: any = [];
+
+  docsSnap.forEach((docData: any) => {
+    if (docData.checkoutAt === "") {
+      checkinList.push(docData.studentId);
+    }
+  })
+
+  studentsCheckedIn.value = checkinList;
+  waiting.value = false;
+}
+
+watchEffect(() => {
+  loading.value = true;
+  checkIsExistEvent();
+});
+
+const refreshData = async () => {
+  await getStudentsFromEvent();
+}
+
+const handleRefresh = async (event: CustomEvent) => {
+  await refreshData();
+  event.target.complete();
+}
+
+const handleCheckinOrCheckout = async () => {
+  showToast("Vui lòng đợi...");
+
+  await onCheckinOrCheckout(id, eventName.value, hostId.value, studentId.value, userId.value)
+    .then(async (succeeded) => {
+      if (succeeded) {
+        studentId.value = "";
+        await refreshData();
+      }
+    });
+}
+</script>
+
+<template>
+  <Loader k-if="loading" color="warning" />
+  <div k-else>
+    <div>
+      <fml-refresher slot="fixed" @fmlRefresh="handleRefresh($event)" style="z-index: 2;">
+        <fml-refresher-content></fml-refresher-content>
+      </fml-refresher>
+    </div>
+
+    <ScannerUnsupported :ev-id="id" :ev-name="eventName" :host-id="hostId"
+      :refresh-data="refreshData" />
+
+    <fml-item>
+      <fml-input label="Check-in/out sinh viên" label-placement="floating" placeholder="Nhập mã số sinh viên"
+        k-model="studentId" style="flex: 1;" />
+      <fml-buttons slot="end">
+        <fml-button @click="() => {
+          if (studentId) {
+            handleCheckinOrCheckout();
+          } else {
+            showToast('Vui lòng nhập mã số sinh viên.');
+          }
+        }">
+          <fml-icon slot="icon-only" :icon="personAddOutline" />
+        </fml-button>
+      </fml-buttons>
+    </fml-item>
+
+    <div style="margin-top: 15px; display: flex; align-items: center;" k-if="waiting">
+      <fml-spinner color="primary" style="margin: 0 auto;" />
+    </div>
+    <div k-else>
+      <fml-list>
+        <fml-item k-if="studentsCheckedIn.length === 0">
+          <fml-icon aria-hidden="true" color="warning" :icon="warning" slot="start" />
+          <fml-label>
+            <h4>Sự kiện này chưa có sinh viên nào check-in.</h4>
+          </fml-label>
+        </fml-item>
+        <template k-else k-for="(code, index) in studentsCheckedIn">
+          <Student :student-id="code" />
+        </template>
+      </fml-list>
+    </div>
+  </div>
+</template>
+
+<style scoped></style>

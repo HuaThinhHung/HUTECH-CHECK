@@ -1,0 +1,374 @@
+<script setup lang="ts">
+import {
+  FmlBadge,
+  FmlButton,
+  FmlCard,
+  FmlCardHeader,
+  FmlCardSubtitle,
+  FmlCardTitle,
+  FmlChip,
+  FmlCol,
+  FmlGrid,
+  FmlIcon,
+  FmlImg,
+  FmlItem,
+  FmlLabel,
+  FmlList,
+  FmlRefresher,
+  FmlRefresherContent,
+  FmlRow,
+  FmlSpinner,
+  FmlText,
+} from "@familyjs/kdu";
+import { calendarOutline, locationOutline, peopleOutline, sparkles } from "famicons/icons";
+import { computed, ref, watchEffect } from "kdu";
+import { useStore } from "kdux";
+import { useWindowSize } from "@kduse/core";
+import { getClassImageType, formatDateTime, showToast, DASHBOARD_EVENTS_API_URL, HOSTS_API_URL } from "@/utils";
+import event_img from "@/assets/icon_event.jpg";
+import { ModalEventDetail } from "@/components";
+import axios from "axios";
+
+const store = useStore();
+
+const fullName = computed(() => store.getters.selectFullName);
+const studentId = computed(() => store.getters.selectStudentId);
+
+const { width } = useWindowSize();
+
+let isDataLoading = ref(false);
+let events = ref<any>([])
+let isOpenDetail = ref(false);
+let eventDetail = ref(null);
+
+const getEvents = async () => {
+  try {
+    events.value = [];
+    const upcomingEvents = (await axios.get(`${DASHBOARD_EVENTS_API_URL}/get-upcoming`)).data;
+
+    if (upcomingEvents.length > 0) {
+      for (const ev of upcomingEvents) {
+        const hostname = await getHostName(ev.host);
+        let imgType = "no-image";
+        if (ev.poster != '') {
+          imgType = await getClassImageType(ev.poster);
+        }
+        if (ev.display) {
+          events.value.push({
+            id: ev.id,
+            title: ev.title,
+            summary: ev.summary || "",
+            description: ev.description || "",
+            date: ev.date,
+            room: ev.room,
+            hostname: hostname,
+            poster: ev.poster || "",
+            posterType: imgType,
+            display: ev.display,
+            preRegistration: ev.preRegistration || null,
+          });
+        }
+      }
+    }
+
+    isDataLoading.value = false;
+  } catch (error) {
+    console.error("Error fetching events:", error);
+  } finally {
+    isDataLoading.value = false; // Set loading state to false regardless of the outcome
+  }
+}
+
+const getHostName = async (hostId: string) => {
+  try {
+    const res = await axios.get(`${HOSTS_API_URL}/get-by-id?hostId=${hostId}`);
+
+    if (res.status == 200) {
+      return res.data.name;
+    }
+  } catch (error) {
+    console.error("Error fetching host name:", error);
+    return "";
+  }
+};
+
+const handlePreRegistration = async (evId: string) => {
+  try {
+    const res = await axios.get(`${DASHBOARD_EVENTS_API_URL}/get?eventId=${evId}`);
+
+    if (res.status == 200) {
+      const event = res.data;
+      if (event.preRegistration != null && event.preRegistration.includes(studentId.value)) {
+      showToast("Bạn đã đăng ký tham dự sự kiện này rồi!");
+      return;
+    } else {
+      await axios.post(`${DASHBOARD_EVENTS_API_URL}/pre-registration`, {
+        evId: evId,
+        studentId: studentId.value,
+      });
+      showToast("Đăng ký tham dự sự kiện thành công!");
+    }
+    }
+  } catch (error) {
+    console.error("Error fetching event:", error);
+  }
+}
+
+const openModal = async (event: any) => {
+  eventDetail.value = event;
+  isOpenDetail.value = true;
+};
+
+const closeModal = () => {
+  eventDetail.value = null;
+  isOpenDetail.value = false;;
+};
+
+watchEffect(() => {
+  isDataLoading.value = true;
+  getEvents();
+});
+
+const handleRefresh = async (event: CustomEvent) => {
+  isDataLoading.value = true;
+  await getEvents();
+  event.target.complete();
+}
+</script>
+
+<template>
+  <div>
+    <fml-refresher slot="fixed" @fmlRefresh="handleRefresh($event)">
+      <fml-refresher-content></fml-refresher-content>
+    </fml-refresher>
+
+    <fml-text>
+      <h3>Xin chào, {{ fullName }}</h3>
+    </fml-text>
+    <p>
+      Dưới đây là các sự kiện đang sắp diễn ra. Vui lòng đăng ký để xác nhận việc tham dự của bạn.
+    </p>
+
+    <p k-if="events == null">Hiện tại chưa có sự kiện mới nào sắp diễn ra.</p>
+    <fml-list k-else-if="width > 768">
+      <fml-item k-for="(event, index) in events" :key="index" button @click="openModal(event)">
+        <fml-img slot="start" k-if="event.poster != ''" :src="event.poster" :class="event.posterType"
+          alt="Event Poster" />
+        <div k-else slot="start">
+          <img :src="event_img" class="no-image" alt="Event Poster" />
+        </div>
+        <fml-label>
+          <fml-grid>
+            <fml-row>
+              <fml-col size="8">
+                <div k-if="index === 0" class="event-upcomming">
+                  <fml-icon :icon="sparkles" color="warning"></fml-icon>
+                  Sự kiện sắp diễn ra
+                </div>
+                <h1>{{ event.title }}</h1>
+                <br />
+                <p>{{ event.summary }}</p>
+                <br />
+                <fml-button color="primary" fill="outline" size="default" @click="openModal(event)">
+                  Chi tiết
+                </fml-button>
+                <fml-button color="primary" size="default" @click="handlePreRegistration(event.id)">
+                  {{ event.preRegistration != null
+                    && event.preRegistration.includes(studentId) ? 'Đã đăng ký' : 'Đăng ký' }}
+                </fml-button>
+              </fml-col>
+              <fml-col size="4">
+                <h2>
+                  Thời gian:
+                  <fml-badge color="danger">
+                    {{ formatDateTime(event.date) }}
+                  </fml-badge>
+                </h2>
+                <br /><br />
+                <h2>
+                  {{ event.room && `Địa điểm: ${event.room}` }}
+                </h2>
+                <br /><br />
+                <h2>
+                  Đơn vị tổ chức: {{ event.hostname }}
+                </h2>
+              </fml-col>
+            </fml-row>
+          </fml-grid>
+        </fml-label>
+      </fml-item>
+    </fml-list>
+
+    <fml-grid k-else>
+      <fml-row k-for="(event, index) in events" :key="index">
+        <fml-col size="12">
+          <fml-card button type="button" @click="openModal(event)">
+            <fml-img k-if="event.poster != ''" :src="event.poster" alt="Event Poster" />
+            <img k-else :src="event_img" class="no-image" alt="Event Poster" />
+            <fml-card-header>
+              <fml-chip k-if="index === 0" color="warning" style="width: fit-content;">
+                <fml-icon :icon="sparkles" color="warning"></fml-icon>
+                <fml-label>Sự kiện sắp diễn ra</fml-label>
+              </fml-chip>
+              <fml-card-title>{{ event.title }}</fml-card-title>
+              <fml-card-subtitle>
+                {{ event.summary }}
+              </fml-card-subtitle>
+            </fml-card-header>
+
+            <fml-card-content>
+              <fml-chip color="danger">
+                <fml-icon :icon="calendarOutline"></fml-icon>
+                <fml-label>{{ formatDateTime(event.date) }}</fml-label>
+              </fml-chip>
+
+              <fml-chip k-if="event.room">
+                <fml-icon :icon="locationOutline"></fml-icon>
+                <fml-label>{{ event.room }}</fml-label>
+              </fml-chip>
+
+              <fml-chip color="primary">
+                <fml-icon :icon="peopleOutline"></fml-icon>
+                <fml-label>{{ event.hostname }}</fml-label>
+              </fml-chip>
+
+              <fml-row>
+                <fml-col size="6">
+                  <fml-button expand="block" fill="outline" color="primary" @click="openModal(event)">
+                    Chi tiết
+                  </fml-button>
+                </fml-col>
+                <fml-col size="6">
+                  <fml-button expand="block" color="primary" @click="handlePreRegistration(event.id)">
+                    {{ event.preRegistration != null
+                      && event.preRegistration.includes(studentId) ? 'Đã đăng ký' : 'Đăng ký' }}
+                  </fml-button>
+                </fml-col>
+              </fml-row>
+            </fml-card-content>
+          </fml-card>
+        </fml-col>
+      </fml-row>
+    </fml-grid>
+  </div>
+
+  <fml-spinner k-if="isDataLoading" color="primary" />
+
+  <ModalEventDetail :isOpen="isOpenDetail" :eventDetail="eventDetail" @close="closeModal()"
+    @onRegistration="(evId: string) => handlePreRegistration(evId)" />
+</template>
+
+<style scoped>
+.event-upcomming {
+  margin-bottom: 10px;
+  padding: 5px 10px;
+  width: fit-content;
+  background: rgba(255, 193, 7, 0.05);
+  border: 1px solid var(--fml-color-warning);
+  border-radius: 8px;
+}
+
+.hr {
+  border-bottom: 1px solid #ccc;
+  margin: 10px 0;
+  width: 100%;
+}
+
+@media screen and (min-width: 768px) {
+  fml-list {
+    background: none;
+  }
+
+  fml-item {
+    margin: 15px 0;
+    --inner-padding-start: 10px;
+    --inner-padding-end: 10px;
+    --padding-top: 10px;
+    --padding-bottom: 10px;
+  }
+
+  div[slot="start"] {
+    margin-inline-end: 15px;
+  }
+
+  img.no-image {
+    width: auto;
+    max-width: 100%;
+    height: 200px;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  fml-img {
+    width: auto;
+    max-width: 100%;
+    height: 0;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  fml-img[slot="start"] {
+    margin-inline-end: 15px;
+  }
+
+  fml-img.image-landscape {
+    height: 200px;
+  }
+
+  fml-img.image-portrait {
+    height: 255px;
+  }
+}
+
+@media screen and (max-width: 768px) {
+  .header-text {
+    padding: 0 16px;
+    margin-bottom: 20px;
+    text-align: center;
+  }
+
+  fml-card {
+    margin-bottom: 5px;
+    --background: var(--fml-color-light);
+    --box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.1);
+    border-radius: 12px;
+  }
+
+  fml-card-header {
+    padding-bottom: 0;
+  }
+
+  fml-card-title {
+    font-size: 1.2em;
+    font-weight: bold;
+  }
+
+  fml-card-subtitle {
+    font-size: 0.9em;
+    color: var(--fml-color-medium);
+  }
+
+  fml-img {
+    width: 100%;
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
+    object-fit: cover;
+  }
+
+  img.no-image {
+    width: 100%;
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
+    object-fit: cover;
+  }
+
+  fml-chip {
+    margin: 8px 0;
+    --background: var(--fml-color-light-shade);
+  }
+
+  fml-button {
+    margin-top: 10px;
+  }
+}
+</style>

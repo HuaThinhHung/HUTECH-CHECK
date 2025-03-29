@@ -1,0 +1,310 @@
+<script setup lang="ts">
+import { FmlSpinner, alertController, loadingController } from "@familyjs/kdu";
+import { computed, onMounted, reactive, ref, watchEffect } from 'kdu';
+import { useStore } from "kdux";
+import jsQR from "jsqr";
+import { onCheckinOrCheckout, showToast } from "@/utils";
+
+const store = useStore();
+
+const userId = computed(() => store.getters.selectUserId);
+
+const props = defineProps(['evId', 'evName', 'hostId', 'refreshData']);
+
+const videoRef = ref<HTMLVideoElement | null>(null);
+const canvasRef = ref<HTMLCanvasElement | null>(null);
+let videoElement: any = null;
+let canvasElement: any = null;
+let canvasContext: any = null;
+let animationFrameId: number | null = null;
+let loading: HTMLFmlLoadingElement | null = null;
+
+let waiting = ref(false);
+let checking = ref(false);
+
+const overlayStyle = reactive({
+  top: '50%', // Ban đầu ở giữa
+  left: '50%', // Ban đầu ở giữa
+  transform: 'translate(-50%, -50%)', // Centering
+  width: '200px', // Kích thước mặc định
+  height: '200px', // Kích thước mặc định
+  rotate: '0deg' // Góc xoay mặc định
+});
+
+const cornerStyle = reactive({
+  width: '25px',
+  height: '25px'
+});
+
+onMounted(() => {
+  videoElement = videoRef.value;
+  canvasElement = canvasRef.value;
+  canvasContext = canvasElement.getContext("2d") || null;
+})
+
+const startScan = async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment' }
+    });
+
+    loading = await loadingController.create({
+      message: 'Đang chuẩn bị camera...',
+    });
+    await loading.present();
+
+    if (videoElement) {
+      videoElement.srcObject = stream;
+      videoElement.setAttribute('playsinline', true);
+      videoElement.play();
+
+      animationFrameId = requestAnimationFrame(scan);
+    }
+  } catch (error) {
+    await showCameraPermissionAlert();
+  }
+}
+
+const showCameraPermissionAlert = async () => {
+  const alert = await alertController.create({
+    header: 'Yêu cầu quyền truy cập camera',
+    message: 'Ứng dụng cần quyền truy cập camera để quét mã QR. Vui lòng cấp quyền truy cập.',
+    buttons: [
+      {
+        text: 'Hủy',
+        role: 'cancel',
+        handler: () => {
+          // Xử lý khi người dùng nhấn nút Cancel
+          showToast('Đã hủy yêu cầu quyền truy cập camera.');
+        }
+      },
+      {
+        text: 'Thử lại',
+        handler: async () => {
+          // Thử lại việc cấp quyền truy cập camera
+          await startScan();
+        }
+      }
+    ]
+  });
+
+  await alert.present();
+}
+
+const calculateRotationAngle = (topLeft: any, topRight: any) => {
+  const dx = topRight.x - topLeft.x;
+  const dy = topRight.y - topLeft.y;
+  return Math.atan2(dy, dx) * (180 / Math.PI);
+}
+
+const scan = async () => {
+  // console.log("Scanning...");
+  if (videoElement?.readyState === videoElement.HAVE_ENOUGH_DATA) {
+    if (loading) {
+      await loading.dismiss();
+      loading = null;
+      waiting.value = false;
+    }
+
+    if (canvasElement && canvasContext) {
+      canvasElement.width = videoElement.videoWidth;
+      canvasElement.height = videoElement.videoHeight;
+
+      canvasContext.drawImage(
+        videoElement,
+        0,
+        0,
+        canvasElement.width,
+        canvasElement.height,
+      );
+
+      const imageData = canvasContext.getImageData(
+        0,
+        0,
+        canvasElement.width,
+        canvasElement.height,
+      );
+
+      const code = jsQR(imageData.data, imageData.width, imageData.height, {
+        inversionAttempts: "dontInvert",
+      });
+      if (code) {
+        const { topLeftCorner, topRightCorner, bottomLeftCorner, bottomRightCorner } = code.location;
+
+        // Tính tỷ lệ giữa kích thước video gốc và kích thước khung hình hiện tại
+        const videoWidth = videoElement.videoWidth;
+        const videoHeight = videoElement.videoHeight;
+        const displayedWidth = videoElement.clientWidth;
+        const displayedHeight = videoElement.clientHeight;
+
+        const widthRatio = displayedWidth / videoWidth;
+        const heightRatio = displayedHeight / videoHeight;
+
+        // Điều chỉnh các tọa độ theo tỷ lệ này
+        const topLeft = { x: topLeftCorner.x * widthRatio, y: topLeftCorner.y * heightRatio };
+        const topRight = { x: topRightCorner.x * widthRatio, y: topRightCorner.y * heightRatio };
+        const bottomLeft = { x: bottomLeftCorner.x * widthRatio, y: bottomLeftCorner.y * heightRatio };
+        const bottomRight = { x: bottomRightCorner.x * widthRatio, y: bottomRightCorner.y * heightRatio };
+
+        const width = Math.abs(topRight.x - topLeft.x);
+        const height = Math.abs(bottomLeft.y - topLeft.y);
+
+        overlayStyle.top = `${topLeft.y}px`;
+        overlayStyle.left = `${topLeft.x}px`;
+        overlayStyle.transform = 'none'; // Remove centering transform once we have actual coordinates
+        overlayStyle.width = `${width}px`;
+        overlayStyle.height = `${height}px`;
+
+        const angle = calculateRotationAngle(topLeft, topRight);
+        overlayStyle.rotate = `${angle}deg`;
+
+        // Update corner size based on target size
+        const cornerSize = Math.min(width, height) * 0.3; // 30% of the smallest dimension
+        cornerStyle.width = `${cornerSize}px`;
+        cornerStyle.height = `${cornerSize}px`;
+
+        checking.value = true;
+
+        await onCheckinOrCheckout(props.evId, props.evName, props.hostId, code.data, userId.value)
+          .then(async (succeeded) => {
+            if (succeeded) {
+              props.refreshData();
+            }
+          });
+
+        setTimeout(() => {
+          checking.value = false;
+        }, 2000);
+      }
+    }
+  }
+
+  animationFrameId = requestAnimationFrame(scan);
+}
+
+watchEffect(() => {
+  waiting.value = true;
+  startScan();
+})
+</script>
+
+<template>
+  <div style="margin-bottom: 15px;">
+    <div k-if="waiting" style="display: flex; align-items: center;">
+      <fml-spinner color="primary" style="margin: 0 auto;" />
+    </div>
+
+    <div class="scanner-container">
+      <video id="video" :hidden="waiting" width="100%" ref="videoRef" />
+      <canvas hidden ref="canvasRef" />
+      <div k-if="!waiting" class="scanner-overlay">
+        <div class="scanner-target" :style="overlayStyle">
+          <div k-if="checking" class="spinner-container">
+            <fml-spinner color="primary" class="spinner" />
+          </div>
+          <div class="scanner-border scanner-border-top-left" :style="cornerStyle"></div>
+          <div class="scanner-border scanner-border-top-right" :style="cornerStyle"></div>
+          <div class="scanner-border scanner-border-bottom-left" :style="cornerStyle"></div>
+          <div class="scanner-border scanner-border-bottom-right" :style="cornerStyle"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.scanner-container {
+  position: relative;
+  width: 100%;
+  max-width: 640px;
+  margin: auto;
+}
+
+#video {
+  display: block;
+  width: 100%;
+}
+
+.scanner-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+.scanner-target {
+  position: absolute;
+  background: rgba(0, 0, 0, 0.25);
+  /* Sử dụng màu nền tối để tạo độ tương phản */
+  border-radius: 10px;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+  /* Thêm đổ bóng để tạo chiều sâu */
+  box-sizing: border-box;
+  transition: top 0.2s ease, left 0.2s ease, width 0.2s ease, height 0.2s ease, transform 0.2s ease;
+  /* Smooth transition when moving */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.spinner-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+}
+
+.spinner {
+  width: 50%;
+  /* Kích thước spinner là 50% của kích thước scanner-target */
+  height: 50%;
+  /* Kích thước spinner là 50% của kích thước scanner-target */
+  max-width: 80px;
+  /* Đặt giới hạn kích thước tối đa */
+  max-height: 80px;
+  /* Đặt giới hạn kích thước tối đa */
+}
+
+.scanner-border {
+  position: absolute;
+  border: 4px solid var(--fml-color-success);
+  /* Màu xanh lá cây cho viền */
+  box-sizing: border-box;
+}
+
+.scanner-border-top-left {
+  top: -2px;
+  left: -2px;
+  border-right: none;
+  border-bottom: none;
+  border-top-left-radius: 10px;
+}
+
+.scanner-border-top-right {
+  top: -2px;
+  right: -2px;
+  border-left: none;
+  border-bottom: none;
+  border-top-right-radius: 10px;
+}
+
+.scanner-border-bottom-left {
+  bottom: -2px;
+  left: -2px;
+  border-right: none;
+  border-top: none;
+  border-bottom-left-radius: 10px;
+}
+
+.scanner-border-bottom-right {
+  bottom: -2px;
+  right: -2px;
+  border-left: none;
+  border-top: none;
+  border-bottom-right-radius: 10px;
+}
+</style>

@@ -1,0 +1,51 @@
+<script setup lang="ts">
+import { FmlIcon, FmlItem, FmlLabel, FmlSpinner } from "@familyjs/kdu";
+import { checkmarkDoneCircle } from "famicons/icons";
+import { ref, watchEffect } from "kdu";
+import axios from "axios";
+import { DASHBOARD_STUDENTS_API_URL } from "@/utils";
+
+const props = defineProps(['studentId']);
+
+let loading = ref(false);
+let name = ref("");
+let code = ref("");
+
+const getData = async () => {
+  try {
+    const res = await axios.get(
+      `${DASHBOARD_STUDENTS_API_URL}/get-by-id?studentId=${props.studentId}`
+    )
+
+    if (res.status == 200) {
+      const stData = res.data
+      name.value = stData.fullName;
+      code.value = stData.studentId;
+    }
+  } catch (e: any) {
+    console.error(e.response.data.message)
+  } finally {
+    loading.value = false;
+  }
+}
+
+watchEffect(() => {
+  loading.value = true;
+  getData();
+})
+</script>
+
+<template>
+  <fml-item k-if="loading">
+    <fml-spinner color="primary" />
+  </fml-item>
+  <fml-item k-else>
+    <fml-icon aria-hidden="true" color="success" :icon="checkmarkDoneCircle" slot="start" />
+    <fml-label>
+      <h4>{{ name }}</h4>
+      <p>{{ code }}</p>
+    </fml-label>
+  </fml-item>
+</template>
+
+<style scoped></style>

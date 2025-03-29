@@ -1,0 +1,72 @@
+<script setup lang="ts">
+import { FmlApp, FmlRouterOutlet } from '@familyjs/kdu';
+import { Layout, Loader } from '@/components';
+import { useStore } from 'kdux';
+import { ref, watchEffect } from 'kdu';
+import axios from 'axios';
+import { DASHBOARD_AUTH_API_URL, getFromLocalStorage } from '@/utils';
+
+let loading = ref(true);
+
+const setTheme = () => {
+  const theme = getFromLocalStorage("use-theme");
+  if (theme != null) {
+    document.body.setAttribute("color-theme", theme);
+  } else {
+    document.body.setAttribute("color-theme", "light");
+  }
+};
+
+watchEffect(() => {
+  setTheme();
+});
+
+const store = useStore();
+
+const checkSession = async () => {
+  const token = localStorage.getItem('authToken')
+  if (!token) {
+    store.dispatch("removeActiveUser");
+  } else {
+    try {
+      const response = await axios.get(
+        `${DASHBOARD_AUTH_API_URL}/check-session`,
+        {
+          headers: { Authorization: `Bearer ${token}` }
+        }
+      )
+
+      if (response.data.user) {
+        store.dispatch("setActiveUser", {
+          user: {
+            isLoggedIn: true,
+            userId: response.data.user.userID,
+            email: response.data.user.email,
+            fullName: response.data.user.fullName,
+          }
+        })
+      } else {
+        store.dispatch("removeActiveUser");
+      }
+    } catch (error) {
+      store.dispatch("removeActiveUser");
+    }
+  }
+  loading.value = false;
+}
+
+watchEffect(() => {
+  checkSession();
+});
+</script>
+
+<template>
+  <Loader k-if="loading" color="warning" />
+  <fml-app k-if="!loading">
+    <Layout>
+      <fml-router-outlet class="fml-padding" style="overflow-y: auto;" />
+    </Layout>
+  </fml-app>
+</template>
+
+<style scoped></style>

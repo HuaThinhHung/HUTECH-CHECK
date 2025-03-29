@@ -1,0 +1,181 @@
+<script setup lang="ts">
+import { AUTH_API_URL, saveToLocalStorage, showToast, DASHBOARD_CONFIG_API_URL, DASHBOARD_STUDENTS_API_URL } from "@/utils";
+import {
+  FmlButton,
+  FmlCard,
+  FmlCardContent,
+  FmlCardHeader,
+  FmlCardSubtitle,
+  FmlCardTitle,
+  FmlInput,
+  FmlSpinner,
+} from "@familyjs/kdu";
+import axios from "axios";
+import { ref } from "kdu";
+
+let studentId = ref("");
+let pwd = ref("");
+let otp = ref("");
+let loading = ref(false);
+let openOtpInput = ref(false);
+
+const redirectToHome = () => {
+  window.location.replace("/");
+};
+
+const checkStudentId = async (value?: string) => {
+  const studentIdPattern = (await axios.get(`${DASHBOARD_CONFIG_API_URL}/get-student-id-pattern`)).data
+
+  if (studentIdPattern != "") {
+    return new RegExp(studentIdPattern.slice(1, -1)).test(value || studentId.value);
+  } else {
+    return true;
+  }
+}
+
+const handleSignIn = async () => {
+  loading.value = true;
+
+  const validStudentId = await checkStudentId(studentId.value);
+
+  if (validStudentId) {
+    if (studentId.value !== pwd.value) {
+      showToast("Mật khẩu không chính xác.", "long");
+      loading.value = false;
+    } else {
+      try {
+        const res = await axios.get(`${DASHBOARD_STUDENTS_API_URL}/get-by-id?studentId=${studentId.value}`);
+
+        if (res.status == 200) {
+          const isRequireStudentLogin = (await axios.get(`${DASHBOARD_CONFIG_API_URL}/get-is-require-student-login`)).data
+
+          if (res.data.email == "" || !isRequireStudentLogin) {
+            try {
+              const res1 = await axios.post(
+                `${AUTH_API_URL}/login`,
+                {
+                  studentId: studentId.value,
+                },
+                {
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                },
+              );
+              if (res1.status == 200) {
+                saveToLocalStorage("use-state", res1.data);
+                showToast("Đăng nhập thành công.", "long");
+                redirectToHome();
+              }
+            } catch (e: any) {
+              showToast("Sinh viên không tồn tại.", "long");
+              loading.value = false;
+            }
+          } else {
+            try {
+              const res2 = await axios.post(
+                `${AUTH_API_URL}/request-otp`,
+                {
+                  studentId: studentId.value,
+                },
+                {
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                },
+              );
+              if (res2.status == 200) {
+                showToast("Đã gửi mã xác thực OTP đến email của sinh viên.", "long");
+                openOtpInput.value = true;
+                loading.value = false;
+              }
+            } catch (e: any) {
+              showToast("Sinh viên không tồn tại.", "long");
+              loading.value = false;
+            }
+          }
+        }
+      } catch (e: any) {
+        showToast("Sinh viên không tồn tại.", "long");
+        loading.value = false;
+      }
+    }
+  } else {
+    showToast("Mã số sinh viên không hợp lệ.", "long");
+    loading.value = false;
+  }
+}
+
+const handleVerifyOtp = async () => {
+  loading.value = true;
+
+  if (otp.value == "") {
+    showToast("Vui lòng nhập mã xác thực.", "long");
+    loading.value = false;
+  } else {
+    try {
+      const res = await axios.post(
+        `${AUTH_API_URL}/verify-otp`,
+        {
+          studentId: studentId.value,
+          otp: otp.value,
+        },
+        {
+          headers: {
+            "Content-Type": "application/json",
+          },
+        },
+      );
+      if (res.status == 200) {
+        saveToLocalStorage("use-state", res.data);
+        showToast("Đăng nhập thành công.", "long");
+        redirectToHome();
+      }
+    } catch (e: any) {
+      showToast(`${e.response.data.message}`, "long");
+      loading.value = false;
+    }
+  }
+}
+</script>
+
+<template>
+  <fml-card>
+    <fml-card-header>
+      <fml-card-title>Đăng nhập</fml-card-title>
+      <fml-card-subtitle>
+        {{ !openOtpInput ?
+          "Để đăng nhập vào hệ thống, sinh viên nhập tài khoản và mật khẩu mặc định là MSSV."
+          : "Để xác minh tài khoản, sinh viên nhập mã xác thực OTP đã được gửi qua email."
+        }}
+      </fml-card-subtitle>
+    </fml-card-header>
+
+    <fml-card-content>
+      <form @submit.prevent="() => {
+        if (!openOtpInput) {
+          handleSignIn();
+        } else {
+          handleVerifyOtp();
+        }
+      }">
+        <div k-if="!openOtpInput">
+          <fml-input label="Tài khoản" label-placement="floating" fill="outline" k-model="studentId" required />
+          <br />
+          <fml-input label="Mật khẩu" label-placement="floating" fill="outline" type="password" k-model="pwd" required />
+        </div>
+        <div k-else>
+          <fml-input label="Mã xác thực" label-placement="floating" fill="outline" type="password" k-model="otp"
+            required />
+        </div>
+        <br />
+        <fml-button type="submit" shape="round" k-if="!loading">
+          {{ !openOtpInput ? "Đăng nhập" : "Xác minh" }}
+        </fml-button>
+        <fml-spinner k-if="loading" color="primary" />
+      </form>
+    </fml-card-content>
+  </fml-card>
+</template>
+
+<style scoped></style>
